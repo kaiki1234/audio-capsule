@@ -23,56 +23,52 @@
 <body>
     <div class="container">
         <h1>声音时空胶囊</h1>
-        <p id="status">正在获取定位...</p>
+        <p id="status">正在获取定位与麦克风...</p>
         <input type="text" id="title" placeholder="胶囊名称" style="width:100%; padding:10px; margin:10px 0;">
-        
         <div class="upload-area">
             <label>🖼️ 上传照片：</label>
             <input type="file" id="imageInput" accept="image/*">
         </div>
-
         <button id="record-btn">🎤 开始录音</button>
         <button id="stop-btn" disabled>💾 封存并埋藏</button>
         <ul id="list"></ul>
     </div>
 
     <script>
-        let currentLat, currentLon, mediaRecorder, audioChunks = [], timer, seconds = 0;
-        const statusEl = document.getElementById('status');
+        let mediaRecorder, audioChunks = [], stream;
+
+        // 1. 初始化时就请求麦克风，确保权限可用
+        async function init() {
+            try {
+                stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                document.getElementById('status').innerText = "定位与麦克风已就绪";
+            } catch (err) {
+                document.getElementById('status').innerText = "❌ 麦克风权限被拒绝，请刷新页面开启";
+            }
+        }
+        init();
 
         navigator.geolocation.watchPosition(pos => {
-            currentLat = pos.coords.latitude; 
-            currentLon = pos.coords.longitude;
-            statusEl.innerText = `当前坐标: ${currentLat.toFixed(4)}, ${currentLon.toFixed(4)}`;
-            render();
+            document.getElementById('status').innerText = `定位: ${pos.coords.latitude.toFixed(4)}, ${pos.coords.longitude.toFixed(4)}`;
         });
 
-        document.getElementById('record-btn').onclick = async () => {
-            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-            mediaRecorder = new MediaRecorder(stream);
+        document.getElementById('record-btn').onclick = () => {
+            if (!stream) return alert("麦克风未就绪，请刷新重试");
             audioChunks = [];
-            seconds = 0;
+            mediaRecorder = new MediaRecorder(stream);
             mediaRecorder.ondataavailable = e => audioChunks.push(e.data);
             mediaRecorder.start();
-            
             document.getElementById('record-btn').disabled = true;
             document.getElementById('stop-btn').disabled = false;
-            
-            timer = setInterval(() => {
-                seconds++;
-                statusEl.innerText = `🔴 正在录音... ${seconds}秒`;
-            }, 1000);
+            document.getElementById('status').innerText = "🔴 正在录音...";
         };
 
-        document.getElementById('stop-btn').onclick = async () => {
-            clearInterval(timer);
+        document.getElementById('stop-btn').onclick = () => {
             mediaRecorder.stop();
-            document.getElementById('stop-btn').disabled = true;
-            statusEl.innerText = "正在封存胶囊...";
-
             mediaRecorder.onstop = async () => {
+                const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
                 const reader = new FileReader();
-                reader.readAsDataURL(new Blob(audioChunks));
+                reader.readAsDataURL(audioBlob);
                 reader.onloadend = async () => {
                     let imageBase64 = null;
                     const file = document.getElementById('imageInput').files[0];
@@ -81,34 +77,26 @@
                         imageBase64 = await imageCompression.getDataUrlFromFile(compressed);
                     }
                     const capsules = JSON.parse(localStorage.getItem('capsules') || '[]');
-                    capsules.push({ id: Date.now(), title: document.getElementById('title').value || '无名胶囊', lat: currentLat, lon: currentLon, audio: reader.result, image: imageBase64 });
+                    capsules.push({ id: Date.now(), title: document.getElementById('title').value || '无名胶囊', audio: reader.result, image: imageBase64 });
                     localStorage.setItem('capsules', JSON.stringify(capsules));
-                    
                     document.getElementById('record-btn').disabled = false;
-                    document.getElementById('title').value = '';
+                    document.getElementById('stop-btn').disabled = true;
+                    document.getElementById('status').innerText = "✅ 胶囊已封存";
                     render();
                 };
             };
         };
 
-        function deleteCapsule(id) {
-            const capsules = JSON.parse(localStorage.getItem('capsules') || '[]').filter(c => c.id !== id);
-            localStorage.setItem('capsules', JSON.stringify(capsules));
-            render();
-        }
-
         function render() {
             const list = document.getElementById('list');
             list.innerHTML = '';
             JSON.parse(localStorage.getItem('capsules') || '[]').forEach(c => {
-                const dist = Math.sqrt((c.lat-currentLat)**2 + (c.lon-currentLon)**2) * 111000;
                 const li = document.createElement('li');
-                li.className = dist < 15 ? 'unlocked' : '';
-                li.innerHTML = `<strong>${c.title}</strong><br>${dist < 15 ? `<audio src="${c.audio}" controls></audio>${c.image ? `<img src="${c.image}">` : ''}` : '🔒 距离太远'}<br>
-                                <button class="delete-btn" onclick="deleteCapsule(${c.id})">🗑️ 删除</button>`;
+                li.innerHTML = `<strong>${c.title}</strong><br><audio src="${c.audio}" controls></audio>${c.image ? `<img src="${c.image}">` : ''}<br><button class="delete-btn" onclick="deleteCapsule(${c.id})">🗑️ 删除</button>`;
                 list.appendChild(li);
             });
         }
+        render();
     </script>
 </body>
 </html>
