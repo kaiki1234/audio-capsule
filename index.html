@@ -10,7 +10,7 @@
         body { font-family: -apple-system, sans-serif; background-color: #f4f4f9; padding: 20px; color: #333; }
         .container { max-width: 600px; margin: 0 auto; padding: 20px; background: white; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
         .upload-area { margin: 15px 0; padding: 15px; border: 2px solid #3498db; border-radius: 8px; text-align: center; }
-        button { width: 100%; padding: 12px; margin-top: 5px; border: none; border-radius: 8px; font-weight: bold; cursor: pointer; }
+        button { width: 100%; padding: 12px; margin-top: 10px; border: none; border-radius: 8px; font-weight: bold; cursor: pointer; }
         #record-btn { background: #e74c3c; color: white; }
         #stop-btn { background: #3498db; color: white; }
         .delete-btn { background: #95a5a6; color: white; font-size: 0.8em; padding: 5px; margin-top: 5px; }
@@ -37,10 +37,13 @@
     </div>
 
     <script>
-        let currentLat, currentLon, mediaRecorder, audioChunks = [];
+        let currentLat, currentLon, mediaRecorder, audioChunks = [], timer, seconds = 0;
+        const statusEl = document.getElementById('status');
+
         navigator.geolocation.watchPosition(pos => {
-            currentLat = pos.coords.latitude; currentLon = pos.coords.longitude;
-            document.getElementById('status').innerText = `坐标: ${currentLat.toFixed(4)}, ${currentLon.toFixed(4)}`;
+            currentLat = pos.coords.latitude; 
+            currentLon = pos.coords.longitude;
+            statusEl.innerText = `当前坐标: ${currentLat.toFixed(4)}, ${currentLon.toFixed(4)}`;
             render();
         });
 
@@ -48,14 +51,25 @@
             const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
             mediaRecorder = new MediaRecorder(stream);
             audioChunks = [];
+            seconds = 0;
             mediaRecorder.ondataavailable = e => audioChunks.push(e.data);
             mediaRecorder.start();
+            
             document.getElementById('record-btn').disabled = true;
             document.getElementById('stop-btn').disabled = false;
+            
+            timer = setInterval(() => {
+                seconds++;
+                statusEl.innerText = `🔴 正在录音... ${seconds}秒`;
+            }, 1000);
         };
 
         document.getElementById('stop-btn').onclick = async () => {
+            clearInterval(timer);
             mediaRecorder.stop();
+            document.getElementById('stop-btn').disabled = true;
+            statusEl.innerText = "正在封存胶囊...";
+
             mediaRecorder.onstop = async () => {
                 const reader = new FileReader();
                 reader.readAsDataURL(new Blob(audioChunks));
@@ -69,9 +83,10 @@
                     const capsules = JSON.parse(localStorage.getItem('capsules') || '[]');
                     capsules.push({ id: Date.now(), title: document.getElementById('title').value || '无名胶囊', lat: currentLat, lon: currentLon, audio: reader.result, image: imageBase64 });
                     localStorage.setItem('capsules', JSON.stringify(capsules));
-                    render();
+                    
                     document.getElementById('record-btn').disabled = false;
-                    document.getElementById('stop-btn').disabled = true;
+                    document.getElementById('title').value = '';
+                    render();
                 };
             };
         };
